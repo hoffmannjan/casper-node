@@ -15,13 +15,13 @@ use casper_types::{
 
 const ARG_PURSE_NAME: &str = "purse_name";
 
-fn burn(uref: URef, amount: U512) {
+fn burn(uref: URef, amount: U512) -> Result<(), mint::Error> {
     let contract_hash = system::get_mint();
     let args = runtime_args! {
         mint::ARG_PURSE => uref,
         mint::ARG_AMOUNT => amount,
     };
-    runtime::call_contract::<()>(contract_hash, mint::METHOD_BURN, args);
+    runtime::call_contract(contract_hash, mint::METHOD_BURN, args)
 }
 
 #[no_mangle]
@@ -40,7 +40,7 @@ pub extern "C" fn call() {
     };
     let amount: U512 = runtime::get_named_arg(mint::ARG_AMOUNT);
 
-    burn(purse_uref, amount);
+    burn(purse_uref, amount).unwrap_or_revert();
 }
 
 fn get_named_arg_size(name: &str) -> Option<usize> {
