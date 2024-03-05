@@ -16,8 +16,6 @@ use casper_types::{
     Key, Phase, PublicKey, StoredValue, URef, U512,
 };
 
-use detail::reduce_total_supply_unchecked;
-
 use crate::{
     core::engine_state::SystemContractRegistry,
     system::mint::{
@@ -58,7 +56,30 @@ pub trait Mint: RuntimeProvider + StorageProvider + SystemProvider {
     }
 
     /// Burns native tokens.
-    fn burn(&mut self, purse: URef, amount: U512) -> Result<(), Error>;
+    fn burn(&mut self, purse: URef, amount: U512) -> Result<(), Error> {
+        let purse_key = Key::URef(purse);
+        self.validate_writeable(&purse_key)
+            .map_err(|_| Error::ForgedReference)?;
+        self.validate_key(&purse_key)
+            .map_err(|_| Error::ForgedReference)?;
+
+        let source_balance: U512 = match self.read_balance(purse)? {
+            Some(source_balance) => source_balance,
+            None => return Err(Error::PurseNotFound),
+        };
+
+        let new_balance = match source_balance.checked_sub(amount) {
+            Some(value) => value,
+            None => U512::zero(),
+        };
+
+        // source_balance is >= than new_balance
+        // this should block user from reducing totaly supply beyond what they own
+        let burned_amount = source_balance - new_balance;
+
+        self.write_balance(purse, new_balance)?;
+        detail::reduce_total_supply_unchecked(self, burned_amount)
+    }
 
     /// Reduce total supply by `amount`. Returns unit on success, otherwise
     /// an error.
@@ -69,7 +90,7 @@ pub trait Mint: RuntimeProvider + StorageProvider + SystemProvider {
             return Err(Error::InvalidTotalSupplyReductionAttempt);
         }
 
-        reduce_total_supply_unchecked(self, amount)
+        detail::reduce_total_supply_unchecked(self, amount)
     }
 
     /// Read balance of given `purse`.
@@ -301,4 +322,5 @@ pub trait Mint: RuntimeProvider + StorageProvider + SystemProvider {
         self.add(total_supply_uref, amount)?;
         Ok(())
     }
+
 }
